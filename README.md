@@ -14,7 +14,19 @@ Unlike simple file-tree tools, `repomap` uses Tree-sitter to parse your code and
 - **Summary Tables**: Optional high-level overview of file density and symbol counts.
 - **Depth Control**: Limit traversal depth for a "big picture" view of large monorepos.
 
-## Install
+## Installation
+
+### From Release (Recommended)
+
+Download the pre-compiled binary for you system from the [Releases](https://github.com/joshfinnie/repomap/releases) page.
+
+1. Download the `.tar.gz` for your OS
+2. Extract the binary: `tar -xvf repomap-*.tar.gz`
+3. Move it to your path: `mv repomap /usr/local/bin`
+
+### From Source
+
+If you have the Rust toolchain installed:
 
 ```bash
 git clone https://github.com/joshfinnie/repomap
@@ -71,6 +83,16 @@ Pasting entire files often includes 80% boilerplate (imports, CSS-in-JS, repetit
 
 `repomap` flips that ratio.
 It provides the AI with the signatures and structure, allowing it to understand where logic lives and how it's organized, so you only have to paste the specific implementation details when they matter.
+
+## Development
+
+**Running Tests** - We use unit tests to ensure AST parsing remains accurate across languages:
+
+```bash
+cargo test
+```
+
+**Binary Saftey** - The tool automattically detects and skips binary files to prevent parser crashes and token waste.
 
 ## License
 
