@@ -49,9 +49,10 @@ fn main() -> Result<()> {
             if let Some(lang) = target_lang
                 && let Ok((file_map, sym_count, line_count)) =
                     formatter::process_file_with_stats(path, lang)
-                    && !file_map.is_empty() {
-                        stats.add_file(path, file_map, sym_count, line_count);
-                    }
+                && !file_map.is_empty()
+            {
+                stats.add_file(path, file_map, sym_count, line_count);
+            }
         }
     }
 

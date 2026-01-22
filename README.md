@@ -1,7 +1,8 @@
 # repomap
 
-[![Release](https://github.com/joshfinnie/repomap/actions/workflows/release.yml/badge.svg)](https://github.com/joshfinnie/repomap/actions/workflows/release.yml)
 [![Version](https://img.shields.io/github/v/release/joshfinnie/repomap)
+[![Release](https://github.com/joshfinnie/repomap/actions/workflows/release.yml/badge.svg)](https://github.com/joshfinnie/repomap/actions/workflows/release.yml)
+[![CI](https://github.com/joshfinnie/repomap/actions/workflows/ci.yml/badge.svg)](https://github.com/joshfinnie/repomap/actions/workflows/ci.yml)
 
 `repomap` is a lightweight, polyglot CLI tool built in Rust that generates a structured Markdown "map" of your repository.
 It is designed specifically to provide high-density context to LLMs (like Gemini, Claude, or ChatGPT) without exhausting their context window with boilerplate code.
