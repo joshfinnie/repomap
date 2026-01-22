@@ -67,14 +67,18 @@ fn main() -> Result<()> {
         if path.is_file() {
             let target_lang = args.language.or_else(|| infer_language(path));
 
-            if let Some(lang) = target_lang {
-                if let Ok((file_map, sym_count, line_count)) = process_file(path, lang) {
-                    if !file_map.is_empty() {
-                        map_content.push_str(&file_map);
-                        table_rows.push_str(&format!("| `{}` | {} | {} |\n", path.display(), sym_count, line_count));
-                        file_count += 1;
-                    }
-                }
+            if let Some(lang) = target_lang
+                && let Ok((file_map, sym_count, line_count)) = process_file(path, lang)
+                && !file_map.is_empty()
+            {
+                map_content.push_str(&file_map);
+                table_rows.push_str(&format!(
+                    "| `{}` | {} | {} |\n",
+                    path.display(),
+                    sym_count,
+                    line_count
+                ));
+                file_count += 1;
             }
         }
     }
@@ -174,10 +178,7 @@ fn process_file(path: &Path, lang: Language) -> Result<(String, usize, usize)> {
                 body: (class_body (method_definition name: (property_identifier) @name) @item))",
             "typescript",
         ),
-        Language::Markdown => (
-            "(atx_heading) @item",
-            "markdown",
-        ),
+        Language::Markdown => ("(atx_heading) @item", "markdown"),
     };
 
     let symbols = parser::extract_symbols(&content, &ts_lang, query_str);
@@ -204,7 +205,7 @@ fn process_file(path: &Path, lang: Language) -> Result<(String, usize, usize)> {
                     } else {
                         sym.name.clone()
                     }
-                },
+                }
             };
 
             output.push_str(&format!(

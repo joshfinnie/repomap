@@ -49,12 +49,12 @@ pub fn extract_symbols(source: &str, lang: &tree_sitter::Language, query_str: &s
                     start_line = node.start_position().row + 1;
                     end_line = node.end_position().row + 1;
 
-                    if node_kind == "atx_heading" {
-                        if let Some(raw_text) = source.get(node.start_byte()..node.end_byte()) {
-                            let level = raw_text.chars().take_while(|&c| c == '#').count();
-                            kind = format!("h{}", level);
-                            name = raw_text.trim_start_matches('#').trim().to_string();
-                        }
+                    if node_kind == "atx_heading"
+                        && let Some(raw_text) = source.get(node.start_byte()..node.end_byte())
+                    {
+                        let level = raw_text.chars().take_while(|&c| c == '#').count();
+                        kind = format!("h{}", level);
+                        name = raw_text.trim_start_matches('#').trim().to_string();
                     }
                 }
                 _ => {}
@@ -62,7 +62,9 @@ pub fn extract_symbols(source: &str, lang: &tree_sitter::Language, query_str: &s
         }
 
         if !name.is_empty() && start_line > 0 {
-            let is_duplicate = symbols.iter().any(|s: &Symbol| s.line == start_line && s.parent.is_some() && parent.is_none());
+            let is_duplicate = symbols
+                .iter()
+                .any(|s: &Symbol| s.line == start_line && s.parent.is_some() && parent.is_none());
             if !is_duplicate {
                 symbols.push(Symbol {
                     name,
