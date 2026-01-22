@@ -79,3 +79,21 @@ pub fn extract_symbols(source: &str, lang: &tree_sitter::Language, query_str: &s
 
     symbols
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_rust_symbol_extraction() {
+        let code = "struct MyStruct { field: i32 } fn my_func() {}";
+        let lang = tree_sitter_rust::LANGUAGE.into();
+        let query = "(function_item name: (identifier) @name) @item (struct_item name: (type_identifier) @name) @item";
+
+        let symbols = extract_symbols(code, &lang, query);
+
+        assert_eq!(symbols.len(), 2);
+        assert_eq!(symbols[0].name, "MyStruct");
+        assert_eq!(symbols[1].name, "my_func");
+    }
+}
