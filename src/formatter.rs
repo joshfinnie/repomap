@@ -37,17 +37,13 @@ impl RepoStats {
 
 fn get_import_query(lang: Language) -> Option<&'static str> {
     match lang {
-        Language::Rust => Some(
-            "(use_declaration argument: (_) @import)",
-        ),
+        Language::Rust => Some("(use_declaration argument: (_) @import)"),
         Language::Python => Some(
             "(import_statement name: (dotted_name) @import)
              (import_from_statement module_name: (dotted_name) @import)
              (import_from_statement module_name: (relative_import) @import)",
         ),
-        Language::Go => Some(
-            "(import_spec path: (interpreted_string_literal) @import)",
-        ),
+        Language::Go => Some("(import_spec path: (interpreted_string_literal) @import)"),
         Language::Javascript | Language::Typescript | Language::Tsx => Some(
             "(import_statement source: (string) @import)
              (export_statement source: (string) @import)",

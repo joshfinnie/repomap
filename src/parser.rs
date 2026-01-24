@@ -107,11 +107,7 @@ pub fn extract_imports(source: &str, lang: &tree_sitter::Language, query_str: &s
                 && let Some(text) = source.get(capture.node.start_byte()..capture.node.end_byte())
             {
                 // Clean up the import string (remove quotes, trim)
-                let cleaned = text
-                    .trim()
-                    .trim_matches('"')
-                    .trim_matches('\'')
-                    .to_string();
+                let cleaned = text.trim().trim_matches('"').trim_matches('\'').to_string();
                 if !cleaned.is_empty() && !imports.contains(&cleaned) {
                     imports.push(cleaned);
                 }

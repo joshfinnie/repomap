@@ -35,7 +35,10 @@ struct Args {
     #[arg(short, long)]
     summary: bool,
 
-    #[arg(long, help = "Output to CLAUDE.md with smart update (append or replace)")]
+    #[arg(
+        long,
+        help = "Output to CLAUDE.md with smart update (append or replace)"
+    )]
     claude: bool,
 }
 
@@ -48,7 +51,11 @@ fn main() -> Result<()> {
 
     // Also exclude the specific output path if provided
     let output_path = if args.claude {
-        Some(args.output.clone().unwrap_or_else(|| PathBuf::from("CLAUDE.md")))
+        Some(
+            args.output
+                .clone()
+                .unwrap_or_else(|| PathBuf::from("CLAUDE.md")),
+        )
     } else {
         args.output.clone()
     };
@@ -94,7 +101,8 @@ fn main() -> Result<()> {
     if args.claude {
         // --claude flag: wrap and smart update CLAUDE.md (or custom path)
         let output_path = args.output.unwrap_or_else(|| PathBuf::from("CLAUDE.md"));
-        let wrapped = formatter::wrap_for_claude_md(&final_output, stats.file_count, token_estimate);
+        let wrapped =
+            formatter::wrap_for_claude_md(&final_output, stats.file_count, token_estimate);
 
         let final_content = if output_path.exists() {
             let existing = std::fs::read_to_string(&output_path)?;
