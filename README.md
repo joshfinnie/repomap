@@ -12,8 +12,10 @@ Unlike simple file-tree tools, `repomap` uses Tree-sitter to parse your code and
 ## Features
 
 - **Polyglot Support**: Deep parsing for Rust, Python, Go, TypeScript, TSX, JavaScript, and Markdown.
-- **Hierarchical Breadcrumbs**: Identifies methods within their parents
+- **Import Extraction**: Lists imports/dependencies for each file to help understand module relationships.
+- **Hierarchical Breadcrumbs**: Identifies methods within their parents (e.g., `ClassName > method`).
 - **AI-Optimized**: Estimates token counts and generates clean Markdown blocks ready for copy-pasting.
+- **CLAUDE.md Integration**: Smart append/update to your existing CLAUDE.md files.
 - **Git-Aware**: Automatically respects .gitignore and hidden files using the ignore crate.
 - **Summary Tables**: Optional high-level overview of file density and symbol counts.
 - **Depth Control**: Limit traversal depth for a "big picture" view of large monorepos.
@@ -67,18 +69,48 @@ repomap --depth 2 .
 ### Save to a file
 
 ```bash
-repomap -s . -o repomap.md
+# Defaults to repomap.md
+repomap -o
+
+# Or specify a custom path
+repomap -o my-map.md
+
+# With summary table
+repomap -s -o
 ```
+
+Note: `repomap.md` and `CLAUDE.md` are automatically excluded from processing to prevent self-referential loops.
+
+### CLAUDE.md Integration
+
+Use the `--claude` flag to output directly to your project's `CLAUDE.md` with smart update behavior:
+
+```bash
+# Creates or appends to CLAUDE.md
+repomap --claude
+
+# Subsequent runs update the map section in place
+repomap --claude
+
+# Map a specific subdirectory
+repomap --claude src/api
+
+# Custom output path with CLAUDE.md formatting
+repomap --claude -o docs/CLAUDE.md
+```
+
+The `--claude` flag wraps the output in a collapsible `<details>` block with `<!-- REPOMAP START -->` and `<!-- REPOMAP END -->` markers. Running the command again will replace just the map section while preserving the rest of your `CLAUDE.md` content.
 
 ## Supported Languages & Patterns
 
-| Language         | Captured Symbols                       |
-| ---------------- | -------------------------------------- |
-| Rust             | Structs, Functions, and impl methods   |
-| TypeScript / TSX | Classes, Interfaces, and Methods       |
-| Python           | Classes and Function definitions       |
-| Go               | Types, Functions, and Method receivers |
-| Markdown         | H1, H2, and H3 Headers                 |
+| Language         | Captured Symbols                       | Imports |
+| ---------------- | -------------------------------------- | ------- |
+| Rust             | Structs, Functions, and impl methods   | `use` statements |
+| TypeScript / TSX | Classes, Interfaces, and Methods       | `import` / `export from` |
+| JavaScript       | Classes, Functions, and Methods        | `import` / `export from` |
+| Python           | Classes and Function definitions       | `import` / `from ... import` |
+| Go               | Types, Functions, and Method receivers | `import` specs |
+| Markdown         | H1, H2, and H3 Headers                 | - |
 
 ## Why `repomap`?
 

@@ -35,6 +35,27 @@ impl RepoStats {
     }
 }
 
+fn get_import_query(lang: Language) -> Option<&'static str> {
+    match lang {
+        Language::Rust => Some(
+            "(use_declaration argument: (_) @import)",
+        ),
+        Language::Python => Some(
+            "(import_statement name: (dotted_name) @import)
+             (import_from_statement module_name: (dotted_name) @import)
+             (import_from_statement module_name: (relative_import) @import)",
+        ),
+        Language::Go => Some(
+            "(import_spec path: (interpreted_string_literal) @import)",
+        ),
+        Language::Javascript | Language::Typescript | Language::Tsx => Some(
+            "(import_statement source: (string) @import)
+             (export_statement source: (string) @import)",
+        ),
+        Language::Markdown => None,
+    }
+}
+
 pub fn process_file_with_stats(path: &Path, lang: Language) -> Result<(String, usize, usize)> {
     let content = fs::read_to_string(path)?;
     let ts_lang = languages::get_ts_language(lang);
@@ -43,33 +64,41 @@ pub fn process_file_with_stats(path: &Path, lang: Language) -> Result<(String, u
         Language::Rust => (
             "(function_item name: (identifier) @name) @item
              (struct_item name: (type_identifier) @name) @item
-             (impl_item 
-                type: (_) @parent 
+             (impl_item
+                type: (_) @parent
                 body: (declaration_list (function_item name: (identifier) @name) @item))",
             "rust",
         ),
         Language::Python => (
             "(function_definition name: (identifier) @name) @item
              (class_definition name: (identifier) @name) @item
-             (class_definition 
-                name: (identifier) @parent 
+             (class_definition
+                name: (identifier) @parent
                 body: (block (function_definition name: (identifier) @name) @item))",
             "python",
         ),
         Language::Go => (
             "(function_declaration name: (identifier) @name) @item
              (type_spec name: (type_identifier) @name) @item
-             (method_declaration 
-                receiver: (parameter_list (parameter_declaration type: (_) @parent)) 
+             (method_declaration
+                receiver: (parameter_list (parameter_declaration type: (_) @parent))
                 name: (field_identifier) @name) @item",
             "go",
         ),
-        Language::Javascript | Language::Typescript | Language::Tsx => (
+        Language::Javascript => (
             "(function_declaration name: (identifier) @name) @item
              (class_declaration name: (identifier) @name) @item
+             (class_declaration
+                name: (identifier) @parent
+                body: (class_body (method_definition name: (property_identifier) @name) @item))",
+            "javascript",
+        ),
+        Language::Typescript | Language::Tsx => (
+            "(function_declaration name: (identifier) @name) @item
+             (class_declaration name: (type_identifier) @name) @item
              (interface_declaration name: (type_identifier) @name) @item
-             (class_declaration 
-                name: (type_identifier) @parent 
+             (class_declaration
+                name: (type_identifier) @parent
                 body: (class_body (method_definition name: (property_identifier) @name) @item))",
             "typescript",
         ),
@@ -77,29 +106,46 @@ pub fn process_file_with_stats(path: &Path, lang: Language) -> Result<(String, u
     };
 
     let symbols = parser::extract_symbols(&content, &ts_lang, query_str);
+
+    // Extract imports
+    let imports = if let Some(import_query) = get_import_query(lang) {
+        parser::extract_imports(&content, &ts_lang, import_query)
+    } else {
+        vec![]
+    };
+
     let mut file_output = String::new();
 
-    if !symbols.is_empty() {
-        file_output.push_str(&format!("\n## {}\n```{}\n", path.display(), lang_tag));
-        for sym in &symbols {
-            let size = sym.end_line - sym.line + 1;
-            let display_name = match &sym.parent {
-                Some(p) => format!("{} > {}", p, sym.name),
-                None => {
-                    if sym.kind.starts_with('h') && sym.kind.len() > 1 {
-                        let level = sym.kind[1..].parse::<usize>().unwrap_or(1);
-                        format!("{}{}", "  ".repeat(level.saturating_sub(1)), sym.name)
-                    } else {
-                        sym.name.clone()
-                    }
-                }
-            };
-            file_output.push_str(&format!(
-                "L{: <3} | {: <10} | {: <30} | ({} lines)\n",
-                sym.line, sym.kind, display_name, size
-            ));
+    if !symbols.is_empty() || !imports.is_empty() {
+        file_output.push_str(&format!("\n## {}\n", path.display()));
+
+        // Show imports first if present
+        if !imports.is_empty() {
+            file_output.push_str(&format!("imports: {}\n", imports.join(", ")));
         }
-        file_output.push_str("```\n");
+
+        if !symbols.is_empty() {
+            file_output.push_str(&format!("```{}\n", lang_tag));
+            for sym in &symbols {
+                let size = sym.end_line - sym.line + 1;
+                let display_name = match &sym.parent {
+                    Some(p) => format!("{} > {}", p, sym.name),
+                    None => {
+                        if sym.kind.starts_with('h') && sym.kind.len() > 1 {
+                            let level = sym.kind[1..].parse::<usize>().unwrap_or(1);
+                            format!("{}{}", "  ".repeat(level.saturating_sub(1)), sym.name)
+                        } else {
+                            sym.name.clone()
+                        }
+                    }
+                };
+                file_output.push_str(&format!(
+                    "L{: <3} | {: <10} | {: <30} | ({} lines)\n",
+                    sym.line, sym.kind, display_name, size
+                ));
+            }
+            file_output.push_str("```\n");
+        }
     }
 
     Ok((file_output, symbols.len(), content.lines().count()))
@@ -119,6 +165,42 @@ pub fn assemble_final_map(root: &str, stats: &RepoStats, show_summary: bool) -> 
     }
     output.push_str(&stats.map_content);
     output
+}
+
+const REPOMAP_START: &str = "<!-- REPOMAP START -->";
+const REPOMAP_END: &str = "<!-- REPOMAP END -->";
+
+pub fn wrap_for_claude_md(content: &str, file_count: usize, token_estimate: usize) -> String {
+    let token_display = if token_estimate >= 1000 {
+        format!("~{:.1}k tokens", token_estimate as f64 / 1000.0)
+    } else {
+        format!("~{} tokens", token_estimate)
+    };
+
+    format!(
+        "{}\n## Repository Structure\n\n<details>\n<summary>Repository map ({} files, {})</summary>\n\n{}\n</details>\n{}\n",
+        REPOMAP_START, file_count, token_display, content, REPOMAP_END
+    )
+}
+
+pub fn update_or_append_repomap(existing_content: &str, new_repomap: &str) -> String {
+    if let (Some(start), Some(end)) = (
+        existing_content.find(REPOMAP_START),
+        existing_content.find(REPOMAP_END),
+    ) {
+        // Replace existing repomap section
+        let before = &existing_content[..start];
+        let after = &existing_content[end + REPOMAP_END.len()..];
+        format!("{}{}{}", before.trim_end(), new_repomap, after)
+    } else {
+        // Append to existing content
+        let trimmed = existing_content.trim_end();
+        if trimmed.is_empty() {
+            new_repomap.to_string()
+        } else {
+            format!("{}\n\n{}", trimmed, new_repomap)
+        }
+    }
 }
 
 #[cfg(test)]
