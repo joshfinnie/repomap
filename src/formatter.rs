@@ -52,7 +52,11 @@ fn get_import_query(lang: Language) -> Option<&'static str> {
     }
 }
 
-pub fn process_file_with_stats(path: &Path, lang: Language) -> Result<(String, usize, usize)> {
+pub fn process_file_with_stats(
+    path: &Path,
+    lang: Language,
+    minimal: bool,
+) -> Result<(String, usize, usize)> {
     let content = fs::read_to_string(path)?;
     let ts_lang = languages::get_ts_language(lang);
 
@@ -108,8 +112,9 @@ pub fn process_file_with_stats(path: &Path, lang: Language) -> Result<(String, u
 
     let symbols = parser::extract_symbols(&content, &tree, &ts_lang, query_str);
 
-    // Extract imports (reuses the same parse tree instead of reparsing)
-    let imports = if let Some(import_query) = get_import_query(lang) {
+    // Extract imports (skipped in minimal mode, which keeps only symbol names/hierarchy;
+    // reuses the same parse tree instead of reparsing)
+    let imports = if !minimal && let Some(import_query) = get_import_query(lang) {
         parser::extract_imports(&content, &tree, &ts_lang, import_query)
     } else {
         vec![]
@@ -126,9 +131,10 @@ pub fn process_file_with_stats(path: &Path, lang: Language) -> Result<(String, u
         }
 
         if !symbols.is_empty() {
-            file_output.push_str(&format!("```{}\n", lang_tag));
+            if !minimal {
+                file_output.push_str(&format!("```{}\n", lang_tag));
+            }
             for sym in &symbols {
-                let size = sym.end_line - sym.line + 1;
                 let display_name = match &sym.parent {
                     Some(p) => format!("{} > {}", p, sym.name),
                     None => {
@@ -140,12 +146,19 @@ pub fn process_file_with_stats(path: &Path, lang: Language) -> Result<(String, u
                         }
                     }
                 };
-                file_output.push_str(&format!(
-                    "L{: <3} | {: <10} | {: <30} | ({} lines)\n",
-                    sym.line, sym.kind, display_name, size
-                ));
+                if minimal {
+                    file_output.push_str(&format!("- {}\n", display_name));
+                } else {
+                    let size = sym.end_line - sym.line + 1;
+                    file_output.push_str(&format!(
+                        "L{: <3} | {: <10} | {: <30} | ({} lines)\n",
+                        sym.line, sym.kind, display_name, size
+                    ));
+                }
             }
-            file_output.push_str("```\n");
+            if !minimal {
+                file_output.push_str("```\n");
+            }
         }
     }
 
@@ -216,12 +229,33 @@ mod tests {
         writeln!(file, "# Header 1\n## Header 2").expect("Failed to write to temp file");
 
         let (output, sym_count, line_count) =
-            process_file_with_stats(file.path(), Language::Markdown).expect("Processing failed");
+            process_file_with_stats(file.path(), Language::Markdown, false)
+                .expect("Processing failed");
 
         assert_eq!(sym_count, 2);
         assert_eq!(line_count, 2);
         assert!(output.contains("h1         | Header 1"));
         assert!(output.contains("h2         |   Header 2"));
+    }
+
+    #[test]
+    fn test_minimal_mode_omits_imports_and_line_numbers() {
+        let mut file = NamedTempFile::new().expect("Failed to create temp file");
+        writeln!(
+            file,
+            "use std::fs;\nstruct Foo {{}}\nimpl Foo {{ fn bar() {{}} }}"
+        )
+        .expect("Failed to write to temp file");
+
+        let (output, sym_count, _) =
+            process_file_with_stats(file.path(), Language::Rust, true).expect("Processing failed");
+
+        assert_eq!(sym_count, 2);
+        assert!(!output.contains("imports:"));
+        assert!(!output.contains("```"));
+        assert!(!output.contains(" | "));
+        assert!(output.contains("- Foo\n"));
+        assert!(output.contains("- Foo > bar\n"));
     }
 
     #[test]
