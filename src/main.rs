@@ -5,6 +5,7 @@ mod walk;
 
 use anyhow::Result;
 use clap::Parser;
+use rayon::prelude::*;
 use std::path::PathBuf;
 
 use formatter::RepoStats;
@@ -61,7 +62,10 @@ fn main() -> Result<()> {
     };
     let output_canonical = output_path.as_ref().and_then(|p| p.canonicalize().ok());
 
-    for result in walk::create_walker(&args.root, args.depth, &args.exclude) {
+    // Walking + language inference is I/O bound and cheap; collect candidates
+    // first so the CPU-heavy parsing below can run across files in parallel.
+    let mut candidates: Vec<(PathBuf, Language)> = Vec::new();
+    for result in walk::create_walker(&args.root, args.depth, &args.exclude)? {
         let entry = result?;
         let path = entry.path();
 
@@ -78,16 +82,33 @@ fn main() -> Result<()> {
             continue;
         }
 
-        if path.is_file() && !walk::is_binary(path) {
-            let target_lang = args.language.or_else(|| languages::infer_language(path));
-            if let Some(lang) = target_lang
-                && let Ok((file_map, sym_count, line_count)) =
-                    formatter::process_file_with_stats(path, lang)
-                && !file_map.is_empty()
-            {
-                stats.add_file(path, file_map, sym_count, line_count);
-            }
+        if path.is_file()
+            && !walk::is_binary(path)
+            && let Some(lang) = args.language.or_else(|| languages::infer_language(path))
+        {
+            candidates.push((path.to_path_buf(), lang));
         }
+    }
+
+    let mut results: Vec<(PathBuf, String, usize, usize)> = candidates
+        .par_iter()
+        .filter_map(|(path, lang)| {
+            let (file_map, sym_count, line_count) =
+                formatter::process_file_with_stats(path, *lang).ok()?;
+            if file_map.is_empty() {
+                None
+            } else {
+                Some((path.clone(), file_map, sym_count, line_count))
+            }
+        })
+        .collect();
+
+    // Parsing order across threads is nondeterministic; sort by path so
+    // output is stable and matches what a sequential walk would produce.
+    results.sort_by(|a, b| a.0.cmp(&b.0));
+
+    for (path, file_map, sym_count, line_count) in results {
+        stats.add_file(&path, file_map, sym_count, line_count);
     }
 
     let final_output = formatter::assemble_final_map(&args.root, &stats, args.summary);

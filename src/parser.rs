@@ -1,4 +1,5 @@
-use tree_sitter::{Parser, Query, QueryCursor, StreamingIterator};
+use std::collections::HashSet;
+use tree_sitter::{Parser, Query, QueryCursor, StreamingIterator, Tree};
 
 pub struct Symbol {
     pub name: String,
@@ -8,15 +9,25 @@ pub struct Symbol {
     pub end_line: usize,
 }
 
-pub fn extract_symbols(source: &str, lang: &tree_sitter::Language, query_str: &str) -> Vec<Symbol> {
+/// Parses `source` once so the resulting tree can be reused across
+/// both symbol and import extraction, instead of parsing twice per file.
+pub fn parse_source(source: &str, lang: &tree_sitter::Language) -> Option<Tree> {
     let mut parser = Parser::new();
-    parser.set_language(lang).expect("Error loading grammar");
+    parser.set_language(lang).ok()?;
+    parser.parse(source, None)
+}
 
-    let tree = parser.parse(source, None).expect("Failed to parse source");
+pub fn extract_symbols(
+    source: &str,
+    tree: &Tree,
+    lang: &tree_sitter::Language,
+    query_str: &str,
+) -> Vec<Symbol> {
     let query = Query::new(lang, query_str).expect("Failed to create query");
     let mut cursor = QueryCursor::new();
 
     let mut symbols = Vec::new();
+    let mut parented_lines: HashSet<usize> = HashSet::new();
     let source_bytes = source.as_bytes();
 
     let mut matches = cursor.matches(&query, tree.root_node(), source_bytes);
@@ -62,10 +73,11 @@ pub fn extract_symbols(source: &str, lang: &tree_sitter::Language, query_str: &s
         }
 
         if !name.is_empty() && start_line > 0 {
-            let is_duplicate = symbols
-                .iter()
-                .any(|s: &Symbol| s.line == start_line && s.parent.is_some() && parent.is_none());
+            let is_duplicate = parent.is_none() && parented_lines.contains(&start_line);
             if !is_duplicate {
+                if parent.is_some() {
+                    parented_lines.insert(start_line);
+                }
                 symbols.push(Symbol {
                     name,
                     kind,
@@ -80,15 +92,12 @@ pub fn extract_symbols(source: &str, lang: &tree_sitter::Language, query_str: &s
     symbols
 }
 
-pub fn extract_imports(source: &str, lang: &tree_sitter::Language, query_str: &str) -> Vec<String> {
-    let mut parser = Parser::new();
-    parser.set_language(lang).expect("Error loading grammar");
-
-    let tree = match parser.parse(source, None) {
-        Some(t) => t,
-        None => return vec![],
-    };
-
+pub fn extract_imports(
+    source: &str,
+    tree: &Tree,
+    lang: &tree_sitter::Language,
+    query_str: &str,
+) -> Vec<String> {
     let query = match Query::new(lang, query_str) {
         Ok(q) => q,
         Err(_) => return vec![],
@@ -127,8 +136,9 @@ mod tests {
         let code = "struct MyStruct { field: i32 } fn my_func() {}";
         let lang = tree_sitter_rust::LANGUAGE.into();
         let query = "(function_item name: (identifier) @name) @item (struct_item name: (type_identifier) @name) @item";
+        let tree = parse_source(code, &lang).unwrap();
 
-        let symbols = extract_symbols(code, &lang, query);
+        let symbols = extract_symbols(code, &tree, &lang, query);
 
         assert_eq!(symbols.len(), 2);
         assert_eq!(symbols[0].name, "MyStruct");
@@ -140,8 +150,9 @@ mod tests {
         let code = "use std::path::Path;\nuse crate::parser;\nfn main() {}";
         let lang = tree_sitter_rust::LANGUAGE.into();
         let query = "(use_declaration argument: (_) @import)";
+        let tree = parse_source(code, &lang).unwrap();
 
-        let imports = extract_imports(code, &lang, query);
+        let imports = extract_imports(code, &tree, &lang, query);
 
         assert_eq!(imports.len(), 2);
         assert!(imports.contains(&"std::path::Path".to_string()));
@@ -153,11 +164,29 @@ mod tests {
         let code = "import { foo } from './foo';\nimport React from 'react';";
         let lang = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
         let query = "(import_statement source: (string) @import)";
+        let tree = parse_source(code, &lang).unwrap();
 
-        let imports = extract_imports(code, &lang, query);
+        let imports = extract_imports(code, &tree, &lang, query);
 
         assert_eq!(imports.len(), 2);
         assert!(imports.contains(&"./foo".to_string()));
         assert!(imports.contains(&"react".to_string()));
+    }
+
+    #[test]
+    fn test_extract_symbols_dedup_is_linear() {
+        // A method line should only be kept once, preferring the parented match.
+        let code = "impl Foo { fn bar() {} }";
+        let lang = tree_sitter_rust::LANGUAGE.into();
+        let query = "(function_item name: (identifier) @name) @item
+             (impl_item
+                type: (_) @parent
+                body: (declaration_list (function_item name: (identifier) @name) @item))";
+        let tree = parse_source(code, &lang).unwrap();
+
+        let symbols = extract_symbols(code, &tree, &lang, query);
+
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0].parent.as_deref(), Some("Foo"));
     }
 }
