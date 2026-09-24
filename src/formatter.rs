@@ -101,11 +101,16 @@ pub fn process_file_with_stats(path: &Path, lang: Language) -> Result<(String, u
         Language::Markdown => ("(atx_heading) @item", "markdown"),
     };
 
-    let symbols = parser::extract_symbols(&content, &ts_lang, query_str);
+    let tree = match parser::parse_source(&content, &ts_lang) {
+        Some(t) => t,
+        None => return Ok((String::new(), 0, content.lines().count())),
+    };
 
-    // Extract imports
+    let symbols = parser::extract_symbols(&content, &tree, &ts_lang, query_str);
+
+    // Extract imports (reuses the same parse tree instead of reparsing)
     let imports = if let Some(import_query) = get_import_query(lang) {
-        parser::extract_imports(&content, &ts_lang, import_query)
+        parser::extract_imports(&content, &tree, &ts_lang, import_query)
     } else {
         vec![]
     };
