@@ -1,6 +1,6 @@
 # repomap
 
-[![Version](https://img.shields.io/github/v/release/joshfinnie/repomap)
+[![Version](https://img.shields.io/github/v/release/joshfinnie/repomap)](https://github.com/joshfinnie/repomap/releases)
 [![Release](https://github.com/joshfinnie/repomap/actions/workflows/release.yml/badge.svg)](https://github.com/joshfinnie/repomap/actions/workflows/release.yml)
 [![CI](https://github.com/joshfinnie/repomap/actions/workflows/ci.yml/badge.svg)](https://github.com/joshfinnie/repomap/actions/workflows/ci.yml)
 
@@ -11,21 +11,23 @@ Unlike simple file-tree tools, `repomap` uses Tree-sitter to parse your code and
 
 ## Features
 
-- **Polyglot Support**: Deep parsing for Rust, Python, Go, TypeScript, TSX, JavaScript, and Markdown.
+- **Polyglot Support**: Deep parsing for Rust, Python, Go, TypeScript, TSX, JavaScript, Java, C, C++, C#, Ruby, PHP, Swift, Kotlin, and Markdown.
+- **Full Signatures**: Emits the whole declaration, parameters and return type included, so a model can call your code rather than just guess that it exists.
 - **Import Extraction**: Lists imports/dependencies for each file to help understand module relationships.
+- **Relevance Ranking**: Scores every file by its centrality in the import graph, so `--max-tokens` spends a fixed budget on the files the rest of the repo actually depends on.
 - **Hierarchical Breadcrumbs**: Identifies methods within their parents (e.g., `ClassName > method`).
-- **AI-Optimized**: Estimates token counts and generates clean Markdown blocks ready for copy-pasting.
+- **JSON Output**: `--format json` for scripts, hooks, and MCP servers that want the symbol table rather than the prose.
+- **Git-Aware**: Respects .gitignore and hidden files, and `--since` narrows the map to what changed against a ref.
 - **CLAUDE.md Integration**: Smart append/update to your existing CLAUDE.md files.
-- **Git-Aware**: Automatically respects .gitignore and hidden files using the ignore crate.
 - **Summary Tables**: Optional high-level overview of file density and symbol counts.
 - **Depth Control**: Limit traversal depth for a "big picture" view of large monorepos.
-- **Minimal Mode**: Strip imports, line numbers, and code blocks down to just symbol names for maximum density.
+- **Minimal Mode**: Strip imports, signatures, line numbers, and code blocks down to just symbol names for maximum density.
 
 ## Installation
 
 ### From Release (Recommended)
 
-Download the pre-compiled binary for you system from the [Releases](https://github.com/joshfinnie/repomap/releases) page.
+Download the pre-compiled binary for your system from the [Releases](https://github.com/joshfinnie/repomap/releases) page.
 
 1. Download the `.tar.gz` for your OS
 2. Extract the binary: `tar -xvf repomap-*.tar.gz`
@@ -45,11 +47,59 @@ cargo install --path .
 
 ### Basic Map
 
-Generate a map of the current directory and print to stout:
+Generate a map of the current directory and print to stdout:
 
 ```bash
 repomap .
 ```
+
+Each symbol comes out with its full signature:
+
+```
+L44   | fn        | pub fn analyze_file(path: &Path, lang: Language) -> Result<FileEntry> | (38 lines)
+L39   | method    | FileEntry > pub fn is_empty(&self) -> bool                   | (3 lines)
+```
+
+Pass `--no-signatures` for bare names if you want the older, denser shape.
+
+### Fit a Token Budget
+
+This is the flag to reach for on a repo too big to map whole.
+`repomap` ranks every file by how central it is to the import graph (a file that half the repo imports scores far above a leaf), then keeps the highest-ranked files that fit:
+
+```bash
+repomap --max-tokens 4000 .
+```
+
+The map says how many files it left out, so you know the view is partial.
+
+To rank by proximity to whatever you are actually working on instead of by global importance:
+
+```bash
+repomap --max-tokens 4000 --focus src/parser.rs .
+```
+
+### Only What Changed
+
+Useful for handing a model context on a branch or a PR without the rest of the repo:
+
+```bash
+repomap --since main .
+repomap --since HEAD~3 .
+```
+
+Modified tracked files and new untracked files both count as changed.
+
+### JSON
+
+For hooks, scripts, and anything that wants to consume the symbol table directly:
+
+```bash
+repomap -f json .
+```
+
+Every symbol carries its name, kind, parent, line range, signature, and whether it is exported.
+Files carry their import list and their ranking score.
 
 ### With Summary and Table of Contents
 
@@ -69,7 +119,7 @@ repomap --depth 2 .
 
 ### Minimal Output
 
-For very large repos where even the full map is too big for your context window, `--minimal` drops imports, line numbers, and code blocks and prints just symbol names and hierarchy, useful as a first-pass overview before drilling into specific files:
+For very large repos where even the full map is too big for your context window, `--minimal` drops imports, signatures, line numbers, and code blocks and prints just symbol names and hierarchy, useful as a first-pass overview before drilling into specific files:
 
 ```bash
 repomap -m .
@@ -112,14 +162,24 @@ The `--claude` flag wraps the output in a collapsible `<details>` block with `<!
 
 ## Supported Languages & Patterns
 
-| Language         | Captured Symbols                       | Imports |
-| ---------------- | -------------------------------------- | ------- |
-| Rust             | Structs, Functions, and impl methods   | `use` statements |
-| TypeScript / TSX | Classes, Interfaces, and Methods       | `import` / `export from` |
-| JavaScript       | Classes, Functions, and Methods        | `import` / `export from` |
-| Python           | Classes and Function definitions       | `import` / `from ... import` |
-| Go               | Types, Functions, and Method receivers | `import` specs |
-| Markdown         | H1, H2, and H3 Headers                 | - |
+| Language         | Captured Symbols                                                        | Imports |
+| ---------------- | ----------------------------------------------------------------------- | ------- |
+| Rust             | Functions, structs, enums, unions, traits, type aliases, consts, statics, modules, macros, impl and trait methods | `use` statements |
+| TypeScript / TSX | Classes, interfaces, type aliases, enums, namespaces, functions, methods, arrow-function consts, module-level consts | `import` / `export from` / dynamic `import()` |
+| JavaScript       | Classes, functions, generators, methods, class fields, arrow-function consts, module-level consts | `import` / `export from` / dynamic `import()` |
+| Python           | Classes, functions, methods (decorated ones included), module-level `CONSTANTS` | `import` / `from ... import` |
+| Go               | Functions, types, type aliases, consts, vars, method receivers, interface methods | `import` specs |
+| Java             | Classes, interfaces, enums, records, annotations, methods, constructors  | `import` declarations |
+| C                | Functions, prototypes, structs, enums, unions, typedefs                 | `#include` |
+| C++              | Everything C captures, plus classes, namespaces, and member functions   | `#include` |
+| C#               | Classes, interfaces, structs, enums, records, delegates, namespaces, methods, properties, constructors | `using` directives |
+| Ruby             | Classes, modules, methods, singleton methods                            | `require` / `require_relative` / `load` |
+| PHP              | Classes, interfaces, traits, enums, functions, methods                  | `use` declarations |
+| Swift            | Classes, structs, enums, protocols, functions, type aliases, methods    | `import` declarations |
+| Kotlin           | Classes, objects, functions, properties, member functions               | `import` declarations |
+| Markdown         | Headings, all levels, indented by depth                                 | - |
+
+File extensions recognized include `.rs`, `.py`, `.pyi`, `.go`, `.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.mts`, `.cts`, `.tsx`, `.java`, `.c`, `.h`, `.cc`, `.cpp`, `.cxx`, `.hpp`, `.hh`, `.hxx`, `.cs`, `.rb`, `.rake`, `.php`, `.swift`, `.kt`, `.kts`, `.md`, and `.markdown`.
 
 ## Why `repomap`?
 
@@ -131,13 +191,23 @@ It provides the AI with the signatures and structure, allowing it to understand 
 
 ## Development
 
-**Running Tests** - We use unit tests to ensure AST parsing remains accurate across languages:
+**Running Tests**
 
 ```bash
 cargo test
 ```
 
-**Binary Saftey** - The tool automattically detects and skips binary files to prevent parser crashes and token waste.
+Unit tests cover each language's Tree-sitter queries in isolation, including one test that compiles every query against its own grammar so a typo in a node name fails loudly instead of silently dropping symbols.
+
+The integration tests in `tests/cli.rs` run the real binary against the fixture repo in `tests/fixture` and diff whole outputs against the golden files in `tests/golden`. After an intentional output change:
+
+```bash
+REPOMAP_UPDATE_GOLDEN=1 cargo test --test cli
+```
+
+Read the resulting diff before committing it.
+
+**Binary Safety** - The tool automatically detects and skips binary files to prevent parser crashes and token waste.
 
 ## License
 

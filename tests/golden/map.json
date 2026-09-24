@@ -1,0 +1,238 @@
+{
+  "root": "tests/fixture",
+  "file_count": 5,
+  "token_estimate": 599,
+  "files": [
+    {
+      "path": "tests/fixture/README.md",
+      "language": "markdown",
+      "line_count": 5,
+      "symbols": [
+        {
+          "name": "Fixture",
+          "line": 1,
+          "end_line": 1,
+          "kind": "h1",
+          "exported": true
+        },
+        {
+          "name": "Purpose",
+          "line": 3,
+          "end_line": 3,
+          "kind": "h2",
+          "exported": true
+        },
+        {
+          "name": "Details",
+          "line": 5,
+          "end_line": 5,
+          "kind": "h3",
+          "exported": true
+        }
+      ],
+      "imports": [],
+      "score": 0.17094
+    },
+    {
+      "path": "tests/fixture/src/app.ts",
+      "language": "typescript",
+      "line_count": 8,
+      "symbols": [
+        {
+          "name": "Config",
+          "line": 3,
+          "end_line": 3,
+          "kind": "type",
+          "signature": "export type Config = { verbose: boolean }",
+          "exported": true
+        },
+        {
+          "name": "run",
+          "line": 5,
+          "end_line": 8,
+          "kind": "fn",
+          "signature": "export const run = (config: Config): void",
+          "exported": true
+        }
+      ],
+      "imports": [
+        "./core"
+      ],
+      "score": 0.17094
+    },
+    {
+      "path": "tests/fixture/src/core.ts",
+      "language": "typescript",
+      "line_count": 15,
+      "symbols": [
+        {
+          "name": "Store",
+          "line": 1,
+          "end_line": 3,
+          "kind": "interface",
+          "signature": "export interface Store",
+          "exported": true
+        },
+        {
+          "name": "get",
+          "parent": "Store",
+          "line": 2,
+          "end_line": 2,
+          "kind": "method",
+          "signature": "get(id: string): string | undefined",
+          "exported": false
+        },
+        {
+          "name": "MemoryStore",
+          "line": 5,
+          "end_line": 11,
+          "kind": "class",
+          "signature": "export class MemoryStore implements Store",
+          "exported": true
+        },
+        {
+          "name": "data",
+          "parent": "MemoryStore",
+          "line": 6,
+          "end_line": 6,
+          "kind": "field",
+          "signature": "private data: Map<string, string> = new Map()",
+          "exported": false
+        },
+        {
+          "name": "get",
+          "parent": "MemoryStore",
+          "line": 8,
+          "end_line": 10,
+          "kind": "method",
+          "signature": "get(id: string): string | undefined",
+          "exported": false
+        },
+        {
+          "name": "makeStore",
+          "line": 13,
+          "end_line": 13,
+          "kind": "fn",
+          "signature": "export const makeStore = (): Store",
+          "exported": true
+        },
+        {
+          "name": "internalSeed",
+          "line": 15,
+          "end_line": 15,
+          "kind": "fn",
+          "signature": "const internalSeed = ()",
+          "exported": false
+        }
+      ],
+      "imports": [],
+      "score": 0.316239
+    },
+    {
+      "path": "tests/fixture/src/lib.rs",
+      "language": "rust",
+      "line_count": 22,
+      "symbols": [
+        {
+          "name": "Mode",
+          "line": 3,
+          "end_line": 6,
+          "kind": "enum",
+          "signature": "pub enum Mode",
+          "exported": true
+        },
+        {
+          "name": "Render",
+          "line": 8,
+          "end_line": 10,
+          "kind": "trait",
+          "signature": "pub trait Render",
+          "exported": true
+        },
+        {
+          "name": "render",
+          "parent": "Render",
+          "line": 9,
+          "end_line": 9,
+          "kind": "method",
+          "signature": "fn render(&self) -> String",
+          "exported": false
+        },
+        {
+          "name": "render",
+          "parent": "Mode",
+          "line": 13,
+          "end_line": 15,
+          "kind": "method",
+          "signature": "fn render(&self) -> String",
+          "exported": false
+        },
+        {
+          "name": "MAX",
+          "line": 18,
+          "end_line": 18,
+          "kind": "const",
+          "signature": "pub const MAX: u32 = 10",
+          "exported": true
+        },
+        {
+          "name": "hidden",
+          "line": 20,
+          "end_line": 22,
+          "kind": "fn",
+          "signature": "fn hidden(cache: &HashMap<u32, String>) -> usize",
+          "exported": false
+        }
+      ],
+      "imports": [
+        "std::collections::HashMap"
+      ],
+      "score": 0.17094
+    },
+    {
+      "path": "tests/fixture/src/util.py",
+      "language": "python",
+      "line_count": 14,
+      "symbols": [
+        {
+          "name": "Widget",
+          "line": 4,
+          "end_line": 10,
+          "kind": "class",
+          "signature": "class Widget",
+          "exported": true
+        },
+        {
+          "name": "label",
+          "parent": "Widget",
+          "line": 6,
+          "end_line": 7,
+          "kind": "method",
+          "signature": "def label(self)",
+          "exported": true
+        },
+        {
+          "name": "render",
+          "parent": "Widget",
+          "line": 9,
+          "end_line": 10,
+          "kind": "method",
+          "signature": "def render(self, indent=0)",
+          "exported": true
+        },
+        {
+          "name": "_private_helper",
+          "line": 13,
+          "end_line": 14,
+          "kind": "fn",
+          "signature": "def _private_helper()",
+          "exported": false
+        }
+      ],
+      "imports": [
+        "json"
+      ],
+      "score": 0.17094
+    }
+  ]
+}
