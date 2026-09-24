@@ -19,6 +19,7 @@ Unlike simple file-tree tools, `repomap` uses Tree-sitter to parse your code and
 - **Git-Aware**: Automatically respects .gitignore and hidden files using the ignore crate.
 - **Summary Tables**: Optional high-level overview of file density and symbol counts.
 - **Depth Control**: Limit traversal depth for a "big picture" view of large monorepos.
+- **Minimal Mode**: Strip imports, line numbers, and code blocks down to just symbol names for maximum density.
 
 ## Installation
 
@@ -64,6 +65,14 @@ Useful for large projects where you only want to see the top-level architecture:
 
 ```bash
 repomap --depth 2 .
+```
+
+### Minimal Output
+
+For very large repos where even the full map is too big for your context window, `--minimal` drops imports, line numbers, and code blocks and prints just symbol names and hierarchy, useful as a first-pass overview before drilling into specific files:
+
+```bash
+repomap -m .
 ```
 
 ### Save to a file

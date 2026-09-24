@@ -37,6 +37,13 @@ struct Args {
     summary: bool,
 
     #[arg(
+        short,
+        long,
+        help = "Emit only symbol names and hierarchy, omitting imports, line numbers, and code blocks"
+    )]
+    minimal: bool,
+
+    #[arg(
         long,
         help = "Output to CLAUDE.md with smart update (append or replace)"
     )]
@@ -94,7 +101,7 @@ fn main() -> Result<()> {
         .par_iter()
         .filter_map(|(path, lang)| {
             let (file_map, sym_count, line_count) =
-                formatter::process_file_with_stats(path, *lang).ok()?;
+                formatter::process_file_with_stats(path, *lang, args.minimal).ok()?;
             if file_map.is_empty() {
                 None
             } else {
