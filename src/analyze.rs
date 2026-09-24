@@ -41,7 +41,12 @@ impl FileEntry {
     }
 }
 
-pub fn analyze_file(path: &Path, lang: Language) -> Result<FileEntry> {
+/// Extracts every symbol in `path`.
+///
+/// `include_locals` keeps bindings declared inside function bodies. They are
+/// filtered here rather than at render time so that every output format and
+/// the token budget agree on what the file contains.
+pub fn analyze_file(path: &Path, lang: Language, include_locals: bool) -> Result<FileEntry> {
     let content = fs::read_to_string(path)?;
     let line_count = content.lines().count();
     let ts_lang = languages::get_ts_language(lang);
@@ -58,13 +63,16 @@ pub fn analyze_file(path: &Path, lang: Language) -> Result<FileEntry> {
         });
     };
 
-    let symbols = parser::extract_symbols(
+    let mut symbols = parser::extract_symbols(
         &content,
         &tree,
         &ts_lang,
         q.symbols,
         languages::visibility_rule(lang),
     );
+    if !include_locals {
+        symbols.retain(|symbol| !symbol.local);
+    }
     let imports = match q.imports {
         Some(query) => parser::extract_imports(&content, &tree, &ts_lang, query),
         None => Vec::new(),
@@ -92,7 +100,7 @@ mod tests {
             .tempfile()
             .expect("temp file");
         file.write_all(contents.as_bytes()).expect("write");
-        analyze_file(file.path(), lang).expect("analysis failed")
+        analyze_file(file.path(), lang, true).expect("analysis failed")
     }
 
     fn names(entry: &FileEntry) -> Vec<String> {
@@ -104,7 +112,7 @@ mod tests {
         let mut file = NamedTempFile::new().expect("temp file");
         writeln!(file, "# Header 1\n## Header 2").expect("write");
 
-        let entry = analyze_file(file.path(), Language::Markdown).expect("analysis failed");
+        let entry = analyze_file(file.path(), Language::Markdown, true).expect("analysis failed");
 
         assert_eq!(entry.symbols.len(), 2);
         assert_eq!(entry.symbols[0].kind, "h1");
@@ -398,7 +406,7 @@ mod tests {
         let mut file = NamedTempFile::new().expect("temp file");
         writeln!(file, "# Only heading\n\nBody text.").expect("write");
 
-        let entry = analyze_file(file.path(), Language::Markdown).expect("analysis failed");
+        let entry = analyze_file(file.path(), Language::Markdown, true).expect("analysis failed");
 
         assert_eq!(entry.symbols[0].span(), 1);
     }
@@ -418,6 +426,135 @@ mod tests {
         let sig = entry.symbols[0].signature.as_deref().expect("signature");
         assert!(sig.len() <= 210, "signature was {} chars", sig.len());
         assert!(sig.ends_with("..."));
+    }
+
+    fn analyze_without_locals(contents: &str, lang: Language, ext: &str) -> FileEntry {
+        let mut file = tempfile::Builder::new()
+            .suffix(ext)
+            .tempfile()
+            .expect("temp file");
+        file.write_all(contents.as_bytes()).expect("write");
+        analyze_file(file.path(), lang, false).expect("analysis failed")
+    }
+
+    const NESTED: &str = "export const run = (n: number): void => {\n\
+         \tconst store = makeStore();\n\
+         \tlet attempts = 0;\n\
+         \tfor (let i = 0; i < 10; i++) {}\n\
+         };\n";
+
+    #[test]
+    fn test_nested_bindings_are_captured_with_their_enclosing_function() {
+        let entry = analyze_str(NESTED, Language::Typescript, ".ts");
+        let found = names(&entry);
+
+        assert!(found.iter().any(|n| n == "run > store"), "got {found:?}");
+        assert!(found.iter().any(|n| n == "run > attempts"), "got {found:?}");
+    }
+
+    #[test]
+    fn test_loop_counters_are_not_symbols() {
+        let entry = analyze_str(NESTED, Language::Typescript, ".ts");
+
+        assert!(
+            !entry.symbols.iter().any(|s| s.name == "i"),
+            "a for-loop counter should be skipped, got {:?}",
+            names(&entry)
+        );
+    }
+
+    #[test]
+    fn test_no_locals_keeps_only_the_outward_surface() {
+        let entry = analyze_without_locals(NESTED, Language::Typescript, ".ts");
+
+        assert_eq!(names(&entry), vec!["run".to_string()]);
+    }
+
+    #[test]
+    fn test_file_scope_bindings_are_not_local() {
+        let entry = analyze_str(
+            "export const API = 'x';\nconst internal = 2;\n",
+            Language::Typescript,
+            ".ts",
+        );
+
+        assert!(
+            entry.symbols.iter().all(|s| !s.local),
+            "file-scope bindings should survive --no-locals, got {:?}",
+            entry.symbols
+        );
+
+        let kept = analyze_without_locals(
+            "export const API = 'x';\nconst internal = 2;\n",
+            Language::Typescript,
+            ".ts",
+        );
+        assert_eq!(kept.symbols.len(), 2);
+    }
+
+    #[test]
+    fn test_multi_declarator_binding_yields_distinct_symbols() {
+        // `let a, b` is one statement with two declarators. Anchoring on the
+        // statement rendered the same label twice.
+        let entry = analyze_str(
+            "function advance() {\n\tlet stopped, stoppedTokens;\n\tconst a = 1, b = 2;\n}\n",
+            Language::Typescript,
+            ".ts",
+        );
+
+        let signatures: Vec<&str> = entry
+            .symbols
+            .iter()
+            .filter_map(|s| s.signature.as_deref())
+            .collect();
+
+        assert!(signatures.contains(&"let stopped"), "got {signatures:?}");
+        assert!(
+            signatures.contains(&"let stoppedTokens"),
+            "got {signatures:?}"
+        );
+        assert!(signatures.contains(&"const a = 1"), "got {signatures:?}");
+        assert!(signatures.contains(&"const b = 2"), "got {signatures:?}");
+    }
+
+    #[test]
+    fn test_binding_signature_keeps_its_keyword_and_export() {
+        let entry = analyze_str(
+            "export const API = 'x';\nlet mutable = 1;\n",
+            Language::Typescript,
+            ".ts",
+        );
+
+        let sig = |name: &str| {
+            entry
+                .symbols
+                .iter()
+                .find(|s| s.name == name)
+                .and_then(|s| s.signature.as_deref())
+                .unwrap_or_else(|| panic!("{name} not found"))
+        };
+
+        assert_eq!(sig("API"), "export const API = 'x'");
+        assert_eq!(sig("mutable"), "let mutable = 1");
+    }
+
+    #[test]
+    fn test_nearest_enclosing_scope_wins() {
+        let entry = analyze_str(
+            "function outer() {\n\
+             \tconst nested = () => {\n\
+             \t\tconst deep = 1;\n\
+             \t};\n\
+             }\n",
+            Language::Typescript,
+            ".ts",
+        );
+
+        let found = names(&entry);
+        assert!(
+            found.iter().any(|n| n == "nested > deep"),
+            "a binding should name its closest enclosing declaration, got {found:?}"
+        );
     }
 
     #[test]

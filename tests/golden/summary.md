@@ -6,7 +6,7 @@
 | File | Symbols | Lines |
 | :--- | :--- | :--- |
 | `tests/fixture/README.md` | 3 | 5 |
-| `tests/fixture/src/app.ts` | 2 | 8 |
+| `tests/fixture/src/app.ts` | 3 | 8 |
 | `tests/fixture/src/core.ts` | 7 | 15 |
 | `tests/fixture/src/lib.rs` | 6 | 22 |
 | `tests/fixture/src/util.py` | 4 | 14 |
@@ -25,6 +25,7 @@ imports: ./core
 ```typescript
 L3    | type      | export type Config = { verbose: boolean }                    | (1 lines)
 L5    | fn        | export const run = (config: Config): void                    | (4 lines)
+L6    | var       | run > const store = makeStore()                              | (1 lines)
 ```
 
 ## tests/fixture/src/core.ts

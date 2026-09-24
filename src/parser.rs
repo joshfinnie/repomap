@@ -18,6 +18,8 @@ pub struct Symbol {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub signature: Option<String>,
     pub exported: bool,
+    /// Declared inside a function or block rather than at file scope.
+    pub local: bool,
 }
 
 impl Symbol {
@@ -76,6 +78,7 @@ struct Partial {
     kind: String,
     signature: Option<String>,
     exported: bool,
+    local: bool,
 }
 
 pub fn extract_symbols(
@@ -142,6 +145,18 @@ pub fn extract_symbols(
         let mut kind = friendly_kind(source, &item, is_receiver);
         let mut signature = signature_of(source, &item);
         let exported = is_exported(source, &item, &name, visibility);
+        let local = is_local_declaration(&item);
+
+        // A loop counter is not a symbol anybody is looking for.
+        if local && is_loop_binding(&item) {
+            continue;
+        }
+
+        // A local binding floats without context, so name the function it
+        // lives in. This is a scope, not a receiver, so the kind is unchanged.
+        if local && parent.is_none() {
+            parent = enclosing_scope_name(source, &item);
+        }
 
         // Markdown headings carry their level in the node text rather than in
         // a named field, so name and kind are derived from the raw text.
@@ -169,6 +184,7 @@ pub fn extract_symbols(
             kind,
             signature,
             exported,
+            local,
         };
 
         match by_name_offset.get_mut(&offset) {
@@ -185,6 +201,7 @@ pub fn extract_symbols(
                     existing.signature = partial.signature;
                 }
                 existing.exported |= partial.exported;
+                existing.local |= partial.local;
             }
             None => {
                 order.push(offset);
@@ -204,6 +221,7 @@ pub fn extract_symbols(
             kind: p.kind,
             signature: p.signature,
             exported: p.exported,
+            local: p.local,
         })
         .collect();
 
@@ -224,6 +242,11 @@ fn node_text<'a>(source: &'a str, node: &Node) -> Option<&'a str> {
 /// that wrapper nodes such as a `const x = () => { .. }` declaration still cut
 /// at the arrow function's body.
 fn signature_of(source: &str, item: &Node) -> Option<String> {
+    // A declarator carries the name and value but not the `const`/`let`
+    // keyword, which sits on the statement above it. Taking the statement's
+    // whole text instead would repeat every declarator in `let a, b`.
+    let keyword = declaration_keyword(source, item);
+
     // `export` wraps the declaration rather than prefixing it, but it belongs
     // in the signature.
     let start = match item.parent() {
@@ -257,6 +280,12 @@ fn signature_of(source: &str, item: &Node) -> Option<String> {
         return None;
     }
 
+    let trimmed = match keyword {
+        Some(keyword) => format!("{keyword} {trimmed}"),
+        None => trimmed.to_string(),
+    };
+    let trimmed = trimmed.as_str();
+
     if trimmed.len() > MAX_SIGNATURE_LEN {
         let cut = trimmed
             .char_indices()
@@ -268,6 +297,36 @@ fn signature_of(source: &str, item: &Node) -> Option<String> {
     }
 
     Some(trimmed.to_string())
+}
+
+/// The `export const` / `let` / `var` prefix for a declarator, taken from the
+/// statement that owns it.
+fn declaration_keyword(source: &str, item: &Node) -> Option<String> {
+    if item.kind() != "variable_declarator" {
+        return None;
+    }
+
+    let statement = item
+        .parent()
+        .filter(|parent| BINDING_KINDS.contains(&parent.kind()))?;
+
+    let mut cursor = statement.walk();
+    let keyword = statement
+        .children(&mut cursor)
+        .find(|child| !child.is_named())
+        .and_then(|child| node_text(source, &child))?
+        .to_string();
+
+    let exported = matches!(
+        statement.parent().map(|parent| parent.kind()),
+        Some("export_statement")
+    );
+
+    Some(if exported {
+        format!("export {keyword}")
+    } else {
+        keyword
+    })
 }
 
 /// The leading keyword token of a declaration, where it names the kind more
@@ -393,6 +452,77 @@ fn is_wrapped_in_export(item: &Node) -> bool {
         current = node.parent();
     }
     false
+}
+
+/// Grammar nodes that bind a value and can appear at any depth.
+const BINDING_KINDS: &[&str] = &["lexical_declaration", "variable_declaration"];
+
+/// The `const`/`let`/`var` statement a declarator belongs to.
+fn binding_statement<'a>(item: &Node<'a>) -> Option<Node<'a>> {
+    if BINDING_KINDS.contains(&item.kind()) {
+        return Some(*item);
+    }
+    item.parent()
+        .filter(|parent| BINDING_KINDS.contains(&parent.kind()))
+}
+
+/// Whether this is a value binding somewhere other than file scope.
+fn is_local_declaration(item: &Node) -> bool {
+    let Some(statement) = binding_statement(item) else {
+        return false;
+    };
+
+    let Some(parent) = statement.parent() else {
+        return false;
+    };
+
+    match parent.kind() {
+        "program" | "module" | "source_file" => false,
+        // `export const x = ...` at file scope is still file scope.
+        "export_statement" => !matches!(
+            parent.parent().map(|g| g.kind()),
+            Some("program" | "module" | "source_file")
+        ),
+        _ => true,
+    }
+}
+
+/// `for (let i = 0; ...)` binds a counter, not something worth mapping.
+fn is_loop_binding(item: &Node) -> bool {
+    let Some(statement) = binding_statement(item) else {
+        return false;
+    };
+
+    matches!(
+        statement.parent().map(|p| p.kind()),
+        Some("for_statement" | "for_in_statement" | "for_of_statement")
+    )
+}
+
+/// The name of the nearest enclosing declaration, used as a breadcrumb for a
+/// local binding. Nearest wins, so a binding inside a nested closure names the
+/// closure rather than the outermost function.
+fn enclosing_scope_name(source: &str, item: &Node) -> Option<String> {
+    let mut current = item.parent();
+
+    while let Some(node) = current {
+        if matches!(node.kind(), "program" | "module" | "source_file") {
+            return None;
+        }
+
+        for field in ["name", "property"] {
+            if let Some(named) = node.child_by_field_name(field)
+                && let Some(text) = node_text(source, &named)
+                && !text.contains(char::is_whitespace)
+            {
+                return Some(text.to_string());
+            }
+        }
+
+        current = node.parent();
+    }
+
+    None
 }
 
 /// Declaration keywords that name the kind better than the grammar's node

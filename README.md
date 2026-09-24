@@ -21,6 +21,7 @@ Unlike simple file-tree tools, `repomap` uses Tree-sitter to parse your code and
 - **CLAUDE.md Integration**: Smart append/update to your existing CLAUDE.md files.
 - **Summary Tables**: Optional high-level overview of file density and symbol counts.
 - **Depth Control**: Limit traversal depth for a "big picture" view of large monorepos.
+- **Nested Bindings**: Captures `const` and `let` inside function bodies, each labelled with the function it lives in, or drop them with `--no-locals`.
 - **Minimal Mode**: Strip imports, signatures, line numbers, and code blocks down to just symbol names for maximum density.
 
 ## Installation
@@ -62,6 +63,23 @@ L39   | method    | FileEntry > pub fn is_empty(&self) -> bool                  
 
 Pass `--no-signatures` for bare names if you want the older, denser shape.
 
+### Locals
+
+In JavaScript and TypeScript, bindings inside a function body are captured too, each carrying the nearest enclosing declaration as its breadcrumb:
+
+```
+L5    | fn        | export const run = (config: Config): void                    | (4 lines)
+L6    | var       | run > const store = makeStore()                              | (1 lines)
+```
+
+This costs real tokens. Measured across two of my own TypeScript projects, including locals grew the map by roughly 1.5x to 2x. When you want only a file's outward surface:
+
+```bash
+repomap --no-locals .
+```
+
+`for` loop counters are skipped either way, and `let a, b` reports two symbols rather than one line twice.
+
 ### Fit a Token Budget
 
 This is the flag to reach for on a repo too big to map whole.
@@ -98,7 +116,7 @@ For hooks, scripts, and anything that wants to consume the symbol table directly
 repomap -f json .
 ```
 
-Every symbol carries its name, kind, parent, line range, signature, and whether it is exported.
+Every symbol carries its name, kind, parent, line range, signature, and whether it is exported and whether it is local.
 Files carry their import list and their ranking score.
 
 ### With Summary and Table of Contents
@@ -165,8 +183,8 @@ The `--claude` flag wraps the output in a collapsible `<details>` block with `<!
 | Language         | Captured Symbols                                                        | Imports |
 | ---------------- | ----------------------------------------------------------------------- | ------- |
 | Rust             | Functions, structs, enums, unions, traits, type aliases, consts, statics, modules, macros, impl and trait methods | `use` statements |
-| TypeScript / TSX | Classes, interfaces, type aliases, enums, namespaces, functions, methods, arrow-function consts, module-level consts | `import` / `export from` / dynamic `import()` |
-| JavaScript       | Classes, functions, generators, methods, class fields, arrow-function consts, module-level consts | `import` / `export from` / dynamic `import()` |
+| TypeScript / TSX | Classes, interfaces, type aliases, enums, namespaces, functions, methods, and `const`/`let` bindings at any depth | `import` / `export from` / dynamic `import()` |
+| JavaScript       | Classes, functions, generators, methods, class fields, and `const`/`let`/`var` bindings at any depth | `import` / `export from` / dynamic `import()` |
 | Python           | Classes, functions, methods (decorated ones included), module-level `CONSTANTS` | `import` / `from ... import` |
 | Go               | Functions, types, type aliases, consts, vars, method receivers, interface methods | `import` specs |
 | Java             | Classes, interfaces, enums, records, annotations, methods, constructors  | `import` declarations |

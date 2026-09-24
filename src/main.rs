@@ -57,6 +57,12 @@ struct Args {
     )]
     no_signatures: bool,
 
+    #[arg(
+        long,
+        help = "Omit bindings declared inside function bodies, leaving only a file's outward surface"
+    )]
+    no_locals: bool,
+
     #[arg(short, long, value_enum, default_value_t = Format::Markdown, help = "Output format")]
     format: Format,
 
@@ -136,7 +142,7 @@ fn main() -> Result<()> {
     let mut entries: Vec<analyze::FileEntry> = candidates
         .par_iter()
         .filter_map(|(path, lang)| {
-            let entry = analyze::analyze_file(path, *lang).ok()?;
+            let entry = analyze::analyze_file(path, *lang, !args.no_locals).ok()?;
             (!entry.is_empty()).then_some(entry)
         })
         .collect();

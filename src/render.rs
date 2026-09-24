@@ -215,6 +215,7 @@ mod tests {
                     kind: "struct".to_string(),
                     signature: Some("pub struct Store".to_string()),
                     exported: true,
+                    local: false,
                 },
                 Symbol {
                     name: "get".to_string(),
@@ -224,6 +225,7 @@ mod tests {
                     kind: "method".to_string(),
                     signature: Some("fn get(&self, id: u32) -> Option<&str>".to_string()),
                     exported: false,
+                    local: false,
                 },
             ],
         }

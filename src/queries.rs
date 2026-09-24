@@ -281,17 +281,17 @@ pub fn queries_for(lang: Language) -> LanguageQueries {
 /// dominant idiom in modern code, so they are captured alongside `function`
 /// and `class` declarations.
 ///
-/// Plain `const` bindings are captured only at module scope. A local variable
-/// inside a function body is the same grammar node, and including those would
-/// bury the file's actual surface.
+/// Plain `const` and `let` bindings are captured at any depth, including
+/// inside function bodies. The item is the individual declarator, not the
+/// whole statement, so `let a, b` reports two symbols rather than one symbol
+/// twice. A local binding is reported with the enclosing
+/// function as its breadcrumb, and `--no-locals` drops them for callers that
+/// only want a file's outward surface.
 const JS_SYMBOLS: &str = r#"
-    (program
-      (lexical_declaration
-        (variable_declarator name: (identifier) @name)) @item)
-    (program
-      (export_statement
-        (lexical_declaration
-          (variable_declarator name: (identifier) @name)) @item))
+    (lexical_declaration
+      (variable_declarator name: (identifier) @name) @item)
+    (variable_declaration
+      (variable_declarator name: (identifier) @name) @item)
     (function_declaration name: (identifier) @name) @item
     (generator_function_declaration name: (identifier) @name) @item
     (class_declaration name: (identifier) @name) @item
@@ -312,13 +312,10 @@ const JS_SYMBOLS: &str = r#"
 "#;
 
 const TS_SYMBOLS: &str = r#"
-    (program
-      (lexical_declaration
-        (variable_declarator name: (identifier) @name)) @item)
-    (program
-      (export_statement
-        (lexical_declaration
-          (variable_declarator name: (identifier) @name)) @item))
+    (lexical_declaration
+      (variable_declarator name: (identifier) @name) @item)
+    (variable_declaration
+      (variable_declarator name: (identifier) @name) @item)
     (function_declaration name: (identifier) @name) @item
     (generator_function_declaration name: (identifier) @name) @item
     (class_declaration name: (type_identifier) @name) @item

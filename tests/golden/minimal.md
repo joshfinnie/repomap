@@ -12,6 +12,7 @@
 ## tests/fixture/src/app.ts
 - Config
 - run
+- run > store
 
 ## tests/fixture/src/core.ts
 - Store

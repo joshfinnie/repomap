@@ -126,6 +126,45 @@ fn test_json_is_valid_and_carries_signatures() {
 }
 
 #[test]
+fn test_no_locals_drops_bindings_inside_functions() {
+    let full = run(&[FIXTURE]);
+    let surface = run(&["--no-locals", FIXTURE]);
+
+    // The fixture declares `const store` inside `run`. With signatures on,
+    // the label carries the whole binding.
+    assert!(full.contains("run > const store"), "got:\n{full}");
+    assert!(!surface.contains("run > const store"), "got:\n{surface}");
+    assert!(
+        surface.contains("export const run"),
+        "the function itself should remain:\n{surface}"
+    );
+    assert!(surface.len() < full.len());
+}
+
+#[test]
+fn test_json_marks_locals() {
+    let raw = run(&["-f", "json", FIXTURE]);
+    let parsed: serde_json::Value = serde_json::from_str(&raw).expect("valid JSON");
+
+    let app = parsed["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["path"].as_str().unwrap_or("").ends_with("app.ts"))
+        .expect("app.ts");
+
+    let store = app["symbols"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["name"] == "store")
+        .expect("store");
+
+    assert_eq!(store["local"], true);
+    assert_eq!(store["parent"], "run");
+}
+
+#[test]
 fn test_output_is_deterministic_across_runs() {
     // Files are parsed in parallel, so a stable ordering is not automatic.
     let first = run(&[FIXTURE]);

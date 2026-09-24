@@ -16,6 +16,7 @@ imports: ./core
 ```typescript
 L3    | type      | export type Config = { verbose: boolean }                    | (1 lines)
 L5    | fn        | export const run = (config: Config): void                    | (4 lines)
+L6    | var       | run > const store = makeStore()                              | (1 lines)
 ```
 
 ## tests/fixture/src/core.ts

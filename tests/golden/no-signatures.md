@@ -16,6 +16,7 @@ imports: ./core
 ```typescript
 L3    | type      | Config                                                       | (1 lines)
 L5    | fn        | run                                                          | (4 lines)
+L6    | var       | run > store                                                  | (1 lines)
 ```
 
 ## tests/fixture/src/core.ts
