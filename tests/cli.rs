@@ -33,6 +33,53 @@ fn run(args: &[&str]) -> String {
     String::from_utf8(output.stdout).expect("stdout was not utf-8")
 }
 
+fn run_in(dir: &Path, args: &[&str]) -> String {
+    let output = Command::new(env!("CARGO_BIN_EXE_repomap"))
+        .current_dir(dir)
+        .args(args)
+        .output()
+        .expect("failed to run repomap");
+
+    assert!(
+        output.status.success(),
+        "repomap {:?} exited with {:?}\nstderr: {}",
+        args,
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    String::from_utf8(output.stdout).expect("stdout was not utf-8")
+}
+
+fn git(dir: &Path, args: &[&str]) {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .output()
+        .expect("git failed to start");
+    assert!(
+        output.status.success(),
+        "git {:?} failed: {}",
+        args,
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A throwaway repo with one committed file, so that `--since` assertions do
+/// not depend on whether this working tree happens to be clean.
+fn committed_repo() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("temp dir");
+    git(dir.path(), &["init", "-q"]);
+    git(dir.path(), &["config", "user.email", "test@example.com"]);
+    git(dir.path(), &["config", "user.name", "Test"]);
+    std::fs::write(dir.path().join("a.rs"), "pub fn alpha() {}\n").expect("write a.rs");
+    std::fs::write(dir.path().join("b.rs"), "pub fn beta() {}\n").expect("write b.rs");
+    git(dir.path(), &["add", "."]);
+    git(dir.path(), &["commit", "-qm", "init"]);
+    dir
+}
+
 fn run_expecting_failure(args: &[&str]) -> String {
     let output = Command::new(env!("CARGO_BIN_EXE_repomap"))
         .current_dir(repo_root())
@@ -292,9 +339,36 @@ fn test_since_reports_a_bad_ref_instead_of_mapping_everything() {
 
 #[test]
 fn test_since_head_on_a_clean_tree_maps_nothing() {
-    // The fixture is committed, so nothing has changed against HEAD.
-    let out = run(&["--since", "HEAD", FIXTURE]);
+    let dir = committed_repo();
+    let out = run_in(dir.path(), &["--since", "HEAD", "."]);
+
     assert!(out.contains("**Files:** 0"), "got:\n{out}");
+}
+
+#[test]
+fn test_since_head_maps_only_the_changed_file() {
+    let dir = committed_repo();
+    std::fs::write(
+        dir.path().join("a.rs"),
+        "pub fn alpha(n: u32) -> u32 { n }\n",
+    )
+    .expect("modify a.rs");
+
+    let out = run_in(dir.path(), &["--since", "HEAD", "."]);
+
+    assert!(out.contains("a.rs"), "got:\n{out}");
+    assert!(!out.contains("b.rs"), "unchanged file appeared:\n{out}");
+}
+
+#[test]
+fn test_since_includes_a_file_that_was_never_committed() {
+    let dir = committed_repo();
+    std::fs::write(dir.path().join("fresh.rs"), "pub fn fresh() {}\n").expect("write fresh.rs");
+
+    let out = run_in(dir.path(), &["--since", "HEAD", "."]);
+
+    assert!(out.contains("fresh.rs"), "got:\n{out}");
+    assert!(!out.contains("b.rs"), "got:\n{out}");
 }
 
 #[test]

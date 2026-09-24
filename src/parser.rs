@@ -1,6 +1,6 @@
 use crate::languages::VisibilityRule;
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tree_sitter::{Node, Parser, Query, QueryCursor, StreamingIterator, Tree};
 
 /// Signatures are collapsed to one line; anything longer than this is
@@ -228,6 +228,14 @@ pub fn extract_symbols(
     // On a one-line declaration the container and its members share a line;
     // list the container first.
     symbols.sort_by_key(|s| (s.line, s.parent.is_some(), s.name.clone()));
+
+    // A local name can be bound more than once in the same scope: Python
+    // reassigns and Rust shadows. Report where it first appears.
+    let mut seen: HashSet<(Option<String>, String)> = HashSet::new();
+    symbols.retain(|symbol| {
+        !symbol.local || seen.insert((symbol.parent.clone(), symbol.name.clone()))
+    });
+
     symbols
 }
 
@@ -364,7 +372,10 @@ fn has_function_declarator(item: &Node) -> bool {
 /// an arrow function sits just below the declarator.
 fn holds_function(node: &Node) -> bool {
     fn search(node: &Node, depth: usize) -> bool {
-        if matches!(node.kind(), "arrow_function" | "function_expression") {
+        if matches!(
+            node.kind(),
+            "arrow_function" | "function_expression" | "closure_expression" | "lambda"
+        ) {
             return true;
         }
         if depth == 0 {
@@ -454,37 +465,77 @@ fn is_wrapped_in_export(item: &Node) -> bool {
     false
 }
 
-/// Grammar nodes that bind a value and can appear at any depth.
-const BINDING_KINDS: &[&str] = &["lexical_declaration", "variable_declaration"];
+/// Grammar nodes that bind a value to a plain name. Their kind is decided by
+/// what they hold, so a name bound to a closure reads as a function.
+const BINDING_KINDS: &[&str] = &[
+    "lexical_declaration",
+    "variable_declaration",
+    "variable_declarator",
+    "let_declaration",
+    "assignment",
+];
 
-/// The `const`/`let`/`var` statement a declarator belongs to.
+/// Bindings that can be local, which adds the declarations that keep their own
+/// kind when they appear at file scope: a `const` inside a function body is a
+/// local, while the same node at the top of the file is part of the surface.
+/// Only value bindings are listed, so a nested helper function still shows up
+/// under `--no-locals`.
+const LOCALIZABLE_KINDS: &[&str] = &[
+    "lexical_declaration",
+    "variable_declaration",
+    "variable_declarator",
+    "let_declaration",
+    "assignment",
+    "const_item",
+    "static_item",
+    "property_declaration",
+];
+
+/// The statement a declarator belongs to, or the node itself when it already
+/// is the statement.
 fn binding_statement<'a>(item: &Node<'a>) -> Option<Node<'a>> {
     if BINDING_KINDS.contains(&item.kind()) {
+        if item.kind() == "variable_declarator" {
+            return item.parent();
+        }
         return Some(*item);
     }
-    item.parent()
-        .filter(|parent| BINDING_KINDS.contains(&parent.kind()))
+    None
 }
 
-/// Whether this is a value binding somewhere other than file scope.
+/// Whether a node is a function, a method, or a closure, in any of the
+/// supported grammars.
+fn is_function_like(kind: &str) -> bool {
+    kind.contains("function")
+        || kind.contains("lambda")
+        || kind.contains("closure")
+        || matches!(
+            kind,
+            "method"
+                | "singleton_method"
+                | "method_definition"
+                | "method_declaration"
+                | "constructor_declaration"
+        )
+}
+
+/// Whether this binding sits inside a function body rather than at file or
+/// type scope. Asked structurally, so it holds for `const` in TypeScript,
+/// `let` in Rust and a bare assignment in Python alike.
 fn is_local_declaration(item: &Node) -> bool {
-    let Some(statement) = binding_statement(item) else {
+    if !LOCALIZABLE_KINDS.contains(&item.kind()) {
         return false;
-    };
-
-    let Some(parent) = statement.parent() else {
-        return false;
-    };
-
-    match parent.kind() {
-        "program" | "module" | "source_file" => false,
-        // `export const x = ...` at file scope is still file scope.
-        "export_statement" => !matches!(
-            parent.parent().map(|g| g.kind()),
-            Some("program" | "module" | "source_file")
-        ),
-        _ => true,
     }
+
+    let mut current = item.parent();
+    while let Some(node) = current {
+        if is_function_like(node.kind()) {
+            return true;
+        }
+        current = node.parent();
+    }
+
+    false
 }
 
 /// `for (let i = 0; ...)` binds a counter, not something worth mapping.
@@ -558,12 +609,9 @@ fn friendly_kind(source: &str, item: &Node, has_parent: bool) -> String {
         return kind.to_string();
     }
 
-    // A const bound to an arrow function is a function to every reader, even
-    // though the grammar calls it a variable declaration.
-    if matches!(
-        node_kind,
-        "lexical_declaration" | "variable_declaration" | "variable_declarator"
-    ) {
+    // A name bound to a closure is a function to every reader, even though the
+    // grammar calls it a variable declaration.
+    if BINDING_KINDS.contains(&node_kind) {
         return if holds_function(item) {
             if has_parent { "method" } else { "fn" }.to_string()
         } else {

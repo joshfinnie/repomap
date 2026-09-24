@@ -558,6 +558,158 @@ mod tests {
     }
 
     #[test]
+    fn test_rust_let_bindings_are_locals_of_their_function() {
+        let entry = analyze_str(
+            "pub fn compute(input: &str) -> usize {\n\
+             \tlet parsed = input.trim();\n\
+             \tlet mut total = 0;\n\
+             \ttotal\n\
+             }\n",
+            Language::Rust,
+            ".rs",
+        );
+
+        let found = names(&entry);
+        assert!(
+            found.iter().any(|n| n == "compute > parsed"),
+            "got {found:?}"
+        );
+        assert!(
+            found.iter().any(|n| n == "compute > total"),
+            "got {found:?}"
+        );
+
+        let parsed = entry
+            .symbols
+            .iter()
+            .find(|s| s.name == "parsed")
+            .expect("parsed");
+        assert_eq!(parsed.kind, "var");
+        assert!(parsed.local);
+    }
+
+    #[test]
+    fn test_rust_let_bound_closure_reads_as_a_function() {
+        let entry = analyze_str(
+            "fn run() {\n\tlet double = |x: u32| x * 2;\n}\n",
+            Language::Rust,
+            ".rs",
+        );
+
+        let double = entry
+            .symbols
+            .iter()
+            .find(|s| s.name == "double")
+            .expect("double");
+        assert_eq!(double.kind, "fn");
+    }
+
+    #[test]
+    fn test_const_is_local_inside_a_function_but_not_at_file_scope() {
+        let entry = analyze_str(
+            "pub const LIMIT: u32 = 5;\n\
+             fn compute() {\n\tconst INNER: u32 = 1;\n}\n",
+            Language::Rust,
+            ".rs",
+        );
+
+        let limit = entry
+            .symbols
+            .iter()
+            .find(|s| s.name == "LIMIT")
+            .expect("LIMIT");
+        assert!(!limit.local, "a file-scope const is part of the surface");
+        assert_eq!(limit.kind, "const");
+
+        let inner = entry
+            .symbols
+            .iter()
+            .find(|s| s.name == "INNER")
+            .expect("INNER");
+        assert!(inner.local);
+        assert_eq!(inner.kind, "const", "it is still a const, just a local one");
+        assert_eq!(inner.parent.as_deref(), Some("compute"));
+    }
+
+    #[test]
+    fn test_rust_shadowed_binding_is_reported_once() {
+        let entry = analyze_str(
+            "fn run() {\n\tlet total = 0;\n\tlet total = total * 2;\n}\n",
+            Language::Rust,
+            ".rs",
+        );
+
+        assert_eq!(
+            entry.symbols.iter().filter(|s| s.name == "total").count(),
+            1,
+            "shadowing should report the first binding, got {:?}",
+            names(&entry)
+        );
+    }
+
+    #[test]
+    fn test_python_locals_and_class_attributes() {
+        let entry = analyze_str(
+            "class Widget:\n\
+             \tregistry = {}\n\
+             \n\
+             \tdef render(self):\n\
+             \t\tresult = []\n\
+             \t\tresult = transform(result)\n\
+             \t\treturn result\n\
+             \n\
+             def helper():\n\
+             \ttemp = 1\n\
+             \treturn temp\n",
+            Language::Python,
+            ".py",
+        );
+
+        let found = names(&entry);
+        assert!(
+            found.iter().any(|n| n == "Widget > registry"),
+            "a class attribute should name its class, got {found:?}"
+        );
+        assert!(
+            found.iter().any(|n| n == "render > result"),
+            "got {found:?}"
+        );
+        assert!(found.iter().any(|n| n == "helper > temp"), "got {found:?}");
+
+        assert_eq!(
+            entry.symbols.iter().filter(|s| s.name == "result").count(),
+            1,
+            "reassignment should not repeat the binding"
+        );
+
+        let registry = entry
+            .symbols
+            .iter()
+            .find(|s| s.name == "registry")
+            .expect("registry");
+        assert!(
+            !registry.local,
+            "a class attribute is type scope, not function scope"
+        );
+    }
+
+    #[test]
+    fn test_python_module_assignment_rules_are_unchanged_by_locals() {
+        let entry = analyze_str(
+            "MAX_SIZE = 10\nlogger = get_logger()\n",
+            Language::Python,
+            ".py",
+        );
+
+        let found = names(&entry);
+        assert!(found.iter().any(|n| n == "MAX_SIZE"), "got {found:?}");
+        assert!(
+            !found.iter().any(|n| n == "logger"),
+            "module scope still keeps only constants, got {found:?}"
+        );
+    }
+
+    #[test]
     fn test_swift_struct_and_enum_are_not_reported_as_classes() {
         // The Swift grammar parses struct, enum and class all as
         // `class_declaration`, so the keyword has to settle the kind.

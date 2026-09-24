@@ -7,7 +7,8 @@ class Widget:
         return "widget"
 
     def render(self, indent=0):
-        return json.dumps({"label": self.label})
+        payload = {"label": self.label}
+        return json.dumps(payload)
 
 
 def _private_helper():

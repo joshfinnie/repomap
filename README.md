@@ -21,7 +21,7 @@ Unlike simple file-tree tools, `repomap` uses Tree-sitter to parse your code and
 - **CLAUDE.md Integration**: Smart append/update to your existing CLAUDE.md files.
 - **Summary Tables**: Optional high-level overview of file density and symbol counts.
 - **Depth Control**: Limit traversal depth for a "big picture" view of large monorepos.
-- **Nested Bindings**: Captures `const` and `let` inside function bodies, each labelled with the function it lives in, or drop them with `--no-locals`.
+- **Nested Bindings**: Captures bindings inside function bodies, each labelled with the function it lives in, or drop them with `--no-locals`.
 - **Minimal Mode**: Strip imports, signatures, line numbers, and code blocks down to just symbol names for maximum density.
 
 ## Installation
@@ -65,20 +65,32 @@ Pass `--no-signatures` for bare names if you want the older, denser shape.
 
 ### Locals
 
-In JavaScript and TypeScript, bindings inside a function body are captured too, each carrying the nearest enclosing declaration as its breadcrumb:
+Bindings inside a function body are captured too, each carrying the nearest enclosing declaration as its breadcrumb:
 
 ```
 L5    | fn        | export const run = (config: Config): void                    | (4 lines)
 L6    | var       | run > const store = makeStore()                              | (1 lines)
+L20   | fn        | fn hidden(cache: &HashMap<u32, String>) -> usize             | (4 lines)
+L21   | var       | hidden > let size = cache.len()                              | (1 lines)
 ```
 
-This costs real tokens. Measured across two of my own TypeScript projects, including locals grew the map by roughly 1.5x to 2x. When you want only a file's outward surface:
+This covers `const`/`let`/`var` in JavaScript and TypeScript, `let` in Rust, and plain assignment in Python. A binding whose value is a function or closure reads as `fn` rather than `var`. A `const` inside a function body is a local; the same declaration at the top of the file is not.
+
+It costs real tokens. Measured on three repositories:
+
+| Repository | With locals | `--no-locals` |
+| ---------- | ----------- | ------------- |
+| repomap's own `src` (Rust) | ~12.9k | ~5.0k |
+| a Next.js/TypeScript app | ~20.2k | ~13.3k |
+| another TypeScript app | ~35.9k | ~20.1k |
+
+Rust takes the biggest hit, since `let` carries work that other languages put in expressions. When you want only a file's outward surface:
 
 ```bash
 repomap --no-locals .
 ```
 
-`for` loop counters are skipped either way, and `let a, b` reports two symbols rather than one line twice.
+Nearest scope wins, so a binding inside a closure names the closure rather than the outermost function. `for` loop counters are skipped. `let a, b` reports two symbols rather than one line twice. A name bound more than once in the same scope (Python reassignment, Rust shadowing) is reported where it first appears.
 
 ### Fit a Token Budget
 
@@ -182,10 +194,10 @@ The `--claude` flag wraps the output in a collapsible `<details>` block with `<!
 
 | Language         | Captured Symbols                                                        | Imports |
 | ---------------- | ----------------------------------------------------------------------- | ------- |
-| Rust             | Functions, structs, enums, unions, traits, type aliases, consts, statics, modules, macros, impl and trait methods | `use` statements |
+| Rust             | Functions, structs, enums, unions, traits, type aliases, consts, statics, modules, macros, impl and trait methods, `let` bindings | `use` statements |
 | TypeScript / TSX | Classes, interfaces, type aliases, enums, namespaces, functions, methods, and `const`/`let` bindings at any depth | `import` / `export from` / dynamic `import()` |
 | JavaScript       | Classes, functions, generators, methods, class fields, and `const`/`let`/`var` bindings at any depth | `import` / `export from` / dynamic `import()` |
-| Python           | Classes, functions, methods (decorated ones included), module-level `CONSTANTS` | `import` / `from ... import` |
+| Python           | Classes, functions, methods (decorated ones included), class attributes, local assignments, module-level `CONSTANTS` | `import` / `from ... import` |
 | Go               | Functions, types, type aliases, consts, vars, method receivers, interface methods | `import` specs |
 | Java             | Classes, interfaces, enums, records, annotations, methods, constructors  | `import` declarations |
 | C                | Functions, prototypes, structs, enums, unions, typedefs                 | `#include` |

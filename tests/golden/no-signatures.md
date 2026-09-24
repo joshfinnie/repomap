@@ -38,15 +38,17 @@ L8    | trait     | Render                                                      
 L9    | method    | Render > render                                              | (1 lines)
 L13   | method    | Mode > render                                                | (3 lines)
 L18   | const     | MAX                                                          | (1 lines)
-L20   | fn        | hidden                                                       | (3 lines)
+L20   | fn        | hidden                                                       | (4 lines)
+L21   | var       | hidden > size                                                | (1 lines)
 ```
 
 ## tests/fixture/src/util.py
 imports: json
 ```python
-L4    | class     | Widget                                                       | (7 lines)
+L4    | class     | Widget                                                       | (8 lines)
 L6    | method    | Widget > label                                               | (2 lines)
-L9    | method    | Widget > render                                              | (2 lines)
-L13   | fn        | _private_helper                                              | (2 lines)
+L9    | method    | Widget > render                                              | (3 lines)
+L10   | var       | render > payload                                             | (1 lines)
+L14   | fn        | _private_helper                                              | (2 lines)
 ```
 

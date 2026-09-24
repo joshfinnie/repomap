@@ -1,7 +1,7 @@
 {
   "root": "tests/fixture",
   "file_count": 5,
-  "token_estimate": 622,
+  "token_estimate": 668,
   "files": [
     {
       "path": "tests/fixture/README.md",
@@ -153,7 +153,7 @@
     {
       "path": "tests/fixture/src/lib.rs",
       "language": "rust",
-      "line_count": 22,
+      "line_count": 23,
       "symbols": [
         {
           "name": "Mode",
@@ -205,11 +205,21 @@
         {
           "name": "hidden",
           "line": 20,
-          "end_line": 22,
+          "end_line": 23,
           "kind": "fn",
           "signature": "fn hidden(cache: &HashMap<u32, String>) -> usize",
           "exported": false,
           "local": false
+        },
+        {
+          "name": "size",
+          "parent": "hidden",
+          "line": 21,
+          "end_line": 21,
+          "kind": "var",
+          "signature": "let size = cache.len()",
+          "exported": false,
+          "local": true
         }
       ],
       "imports": [
@@ -220,12 +230,12 @@
     {
       "path": "tests/fixture/src/util.py",
       "language": "python",
-      "line_count": 14,
+      "line_count": 15,
       "symbols": [
         {
           "name": "Widget",
           "line": 4,
-          "end_line": 10,
+          "end_line": 11,
           "kind": "class",
           "signature": "class Widget",
           "exported": true,
@@ -245,16 +255,26 @@
           "name": "render",
           "parent": "Widget",
           "line": 9,
-          "end_line": 10,
+          "end_line": 11,
           "kind": "method",
           "signature": "def render(self, indent=0)",
           "exported": true,
           "local": false
         },
         {
+          "name": "payload",
+          "parent": "render",
+          "line": 10,
+          "end_line": 10,
+          "kind": "var",
+          "signature": "payload = {\"label\": self.label}",
+          "exported": true,
+          "local": true
+        },
+        {
           "name": "_private_helper",
-          "line": 13,
-          "end_line": 14,
+          "line": 14,
+          "end_line": 15,
           "kind": "fn",
           "signature": "def _private_helper()",
           "exported": false,

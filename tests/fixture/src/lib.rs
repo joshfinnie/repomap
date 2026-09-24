@@ -18,5 +18,6 @@ impl Render for Mode {
 pub const MAX: u32 = 10;
 
 fn hidden(cache: &HashMap<u32, String>) -> usize {
-    cache.len()
+    let size = cache.len();
+    size
 }

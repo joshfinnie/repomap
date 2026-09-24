@@ -30,10 +30,12 @@
 - Mode > render
 - MAX
 - hidden
+- hidden > size
 
 ## tests/fixture/src/util.py
 - Widget
 - Widget > label
 - Widget > render
+- render > payload
 - _private_helper
 

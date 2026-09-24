@@ -41,6 +41,9 @@ pub fn queries_for(lang: Language) -> LanguageQueries {
                    name: (type_identifier) @parent
                    body: (declaration_list
                      (function_item name: (identifier) @name) @item))
+                (let_declaration pattern: (identifier) @name) @item
+                (let_declaration
+                  pattern: (mut_pattern (identifier) @name)) @item
                 (mod_item
                    name: (identifier) @scope
                    body: (declaration_list
@@ -64,6 +67,14 @@ pub fn queries_for(lang: Language) -> LanguageQueries {
                    (expression_statement
                      (assignment left: (identifier) @name) @item))
                  (#match? @name "^[A-Z][A-Z0-9_]*$"))
+                (block
+                  (expression_statement
+                    (assignment left: (identifier) @name) @item))
+                (class_definition
+                   name: (identifier) @parent
+                   body: (block
+                     (expression_statement
+                       (assignment left: (identifier) @name) @item)))
             "#,
             imports: Some(
                 "(import_statement name: (dotted_name) @import)
